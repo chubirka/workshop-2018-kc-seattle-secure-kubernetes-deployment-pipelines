@@ -86,3 +86,89 @@ $ kubectl get pods --selector=app=nginx
 ```
 
 Notice that the existing deployment is not affected - admission controllers are only called when an API call is "admitted" to the API server.
+
+## 1.7.2.2 Kubectl Plugin
+
+Now that the cluster is healthy and preventing risky deployments, use Kubesec
+to check the risk of deployments that are already running.
+
+Install the kubectl plugin:
+
+```bash
+$ mkdir -p ~/.kube/plugins/scan && \
+curl -sL https://github.com/stefanprodan/kubectl-kubesec/releases/download/0.2.0/kubectl-kubesec_0.2.0_`uname -s`_amd64.tar.gz | tar xzvf - -C ~/.kube/plugins/scan
+```
+
+This has installed a binary to `~/.kube/plugins/scan`, and added a new command to `kubectl`:
+
+```bash
+$ kubectl plugin scan --help
+Scan and score Kubernetes resources using security features powered by Kubesec.io
+
+Usage:
+  kubectl plugin scan [flags] [options]
+
+Use "kubectl options" for a list of global command-line options (applies to all commands).
+```
+
+Choose a pod in the `kube-system` namespace and scan it:
+
+```bash
+$ kubectl -n kube-system plugin scan pod/POD_NAME
+```
+
+What do these responses mean? How can we use them to enhance the security of our YAML?
+
+<!-- warning and advisories using selectors on YAML. Take heed of them! -->
+
+[https://kubesec.io/](https://kubesec.io/) hosts human-readable rationales for
+the risk scores associated with each entry.
+
+What's the most dangerous risk identified?
+
+<!-- privileged, mounted docker socket, host namespaces -->
+
+How can we increase the score of our deployments?
+
+<!-- add security features! Caps, Seccomp, securityContext entries -->
+
+## 1.7.2.3 Add kubesec to the pipeline
+
+This stage checks the risk score of the `deployment.yaml`.
+
+For larger deployments and GitOps repos this can be modified to check only
+files that have changed, or to discover and verify all Kubernetes YAML using
+`kubesec` and `GNU Parallel`.
+
+```
+  stage('Kubesec') {
+    sh """
+      echo 'Running Kubesec...'
+      set -o pipefail
+
+      if curl --silent \
+           --compressed \
+           --connect-timeout 5 \
+           -F file=@deployment.yaml \
+           https://kubesec.io/ \
+         | jq --exit-status '.score > 10' >/dev/null; then
+
+        exit 0;
+      fi
+
+      echo 'Application failed kubesec scan'
+      exit 1
+    """'
+  }
+```
+
+> Due to the way Jenkins parses shell blocks for variable substitutions, we
+> were unable to write the above code more nicely, e.g. to use the `kubesec`
+> script from earlier.
+
+Why bother with the admission controller if we have this step?
+
+<!--
+- because it can be circumvented by pushing anyway, either from jenkins or
+  manually
+-->

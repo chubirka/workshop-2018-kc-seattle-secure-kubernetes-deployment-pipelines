@@ -14,7 +14,7 @@ minikube stop
 Then start the cluster with the insecure registry flag.
 
 ```bash
-minikube start --insecure-registry=<Minikube_IP>:30003
+minikube start --insecure-registry=https://<Minikube_IP>:30003
 ```
 
 We will deploy our registry as an application in minikube, using the harbor setup. To install Harbor run:
@@ -74,6 +74,16 @@ Head to `<Minikube_IP>:30003/harbor/sign-in` to login to the Harbor UI. Username
 ### Configure Harbor project to use Clair
 Turn on image scanning for the default library project by selecting the `library` project, clicking the `Configuration` tab. Select `Prevent vulnerable images from running` and set the threshold to high. This will prevent vulnerable images with one or more `high` vulnerability CVEs from getting pulled from this registry. Set the option to scan on push.
 
+If left alone, the registry will eventually pull the vulnerability database from the internet, however depending on bandwidth this can be a lengthy process. For ease of access, run the following command to load the Clair database from your local machine into minikube. <harbor-database> should be replaced with the name of the container on the Minikube VM which you can find with `docker ps` while on the VM. (It probably starts with k8s_database_harbor-harbor-database)
+
+```bash
+scp -r -i $(minikube ssh-key) ./clair-db/* docker@$(minikube ip):/home/docker/
+minikube ssh
+docker exec -i <harbor-database> psql -U postgres < clear.sql
+docker exec -i <harbor-database> psql -U postgres < vulnerability.sql
+exit
+```
+
 Now build the image to be scanned. Clone the demo-API https://github.com/lukebond/demo-api onto your local machine and check out the `kubecon` branch.
 
 ```bash
@@ -89,7 +99,7 @@ docker build . -t <Minikube_IP>:30003/library/demo-api:vulnerable
 docker push <Minikube_IP>:30003/library/demo-api:vulnerable
 ```
 
-In the Harbor UI, enter the library project and view the demo-api image. If the `vulnerability` column shows as `not scanned`, head to the `Configuration tab` in the left hand side menu, click `vulnerability` and check if there is a date stamp for `Database updated on`. If you see a notification icon, Harbor is still downloading its CVE database, which can take some time depending on bandwidth. Wait until you see the time stamp, kick off a scan and return to the pushed image. The vulnerability rating should be showing as `HIGH`, indicating that there is one or more strong vulnerabilities in the image.
+In the Harbor UI, enter the library project and view the demo-api image. The vulnerability rating should be showing as `HIGH`, indicating that there is one or more strong vulnerabilities in the image.
 
 ### Deploy vulnerable image
 
